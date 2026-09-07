@@ -1,7 +1,8 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import DashboardLayout from "./layouts/DashboardLayout";
 import Landing from "./pages/Landing/Landing";
+import Login from "./pages/Login/Login";
 import Dashboard from "./pages/Dashboard/Dashboard";
 import LiveLocation from "./pages/LiveLocation/LiveLocation";
 import EmergencyCenter from "./pages/EmergencyCenter/EmergencyCenter";
@@ -9,8 +10,14 @@ import EmergencyContacts from "./pages/EmergencyContacts/EmergencyContacts";
 import SensorAnalyticsPage from "./pages/SensorAnalytics/SensorAnalytics";
 import SafetyHistoryPage from "./pages/SafetyHistory/SafetyHistory";
 
-function Login() {
-  return <div>Login Page</div>;
+function ProtectedRoute({ children }) {
+  const location = useLocation();
+
+  if (sessionStorage.getItem("nirbhaya-authenticated") !== "true") {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+
+  return children;
 }
 
 function App() {
@@ -25,99 +32,121 @@ function App() {
         <Route
           path="/dashboard"
           element={
-            <DashboardLayout>
-              <Dashboard />
-            </DashboardLayout>
+            <ProtectedRoute>
+              <DashboardLayout>
+                <Dashboard />
+              </DashboardLayout>
+            </ProtectedRoute>
           }
         />
 
         <Route
           path="/location"
           element={
-            <DashboardLayout>
-              <LiveLocation />
-            </DashboardLayout>
+            <ProtectedRoute>
+              <DashboardLayout>
+                <LiveLocation />
+              </DashboardLayout>
+            </ProtectedRoute>
           }
         />
 
         <Route
           path="/live-location"
           element={
-            <DashboardLayout>
-              <LiveLocation />
-            </DashboardLayout>
+            <ProtectedRoute>
+              <DashboardLayout>
+                <LiveLocation />
+              </DashboardLayout>
+            </ProtectedRoute>
           }
         />
 
         <Route
           path="/emergency"
           element={
-            <DashboardLayout>
-              <EmergencyCenter />
-            </DashboardLayout>
+            <ProtectedRoute>
+              <DashboardLayout>
+                <EmergencyCenter />
+              </DashboardLayout>
+            </ProtectedRoute>
           }
         />
 
         <Route
           path="/emergency-center"
           element={
-            <DashboardLayout>
-              <EmergencyCenter />
-            </DashboardLayout>
+            <ProtectedRoute>
+              <DashboardLayout>
+                <EmergencyCenter />
+              </DashboardLayout>
+            </ProtectedRoute>
           }
         />
 
         <Route
           path="/analytics"
           element={
-            <DashboardLayout>
-              <SensorAnalyticsPage />
-            </DashboardLayout>
+            <ProtectedRoute>
+              <DashboardLayout>
+                <SensorAnalyticsPage />
+              </DashboardLayout>
+            </ProtectedRoute>
           }
         />
 
         <Route
           path="/sensor-analytics"
           element={
-            <DashboardLayout>
-              <SensorAnalyticsPage />
-            </DashboardLayout>
+            <ProtectedRoute>
+              <DashboardLayout>
+                <SensorAnalyticsPage />
+              </DashboardLayout>
+            </ProtectedRoute>
           }
         />
 
         <Route
           path="/history"
           element={
-            <DashboardLayout>
-              <SafetyHistoryPage />
-            </DashboardLayout>
+            <ProtectedRoute>
+              <DashboardLayout>
+                <SafetyHistoryPage />
+              </DashboardLayout>
+            </ProtectedRoute>
           }
         />
 
         <Route
           path="/safety-history"
           element={
-            <DashboardLayout>
-              <SafetyHistoryPage />
-            </DashboardLayout>
+            <ProtectedRoute>
+              <DashboardLayout>
+                <SafetyHistoryPage />
+              </DashboardLayout>
+            </ProtectedRoute>
           }
         />
 
         <Route
           path="/contacts"
           element={
-            <DashboardLayout>
-              <EmergencyContacts />
-            </DashboardLayout>
+            <ProtectedRoute>
+              <DashboardLayout>
+                <EmergencyContacts />
+              </DashboardLayout>
+            </ProtectedRoute>
           }
         />
 
         <Route
           path="/emergency-contacts"
           element={
-            <DashboardLayout>
-              <EmergencyContacts />
-            </DashboardLayout>
+            <ProtectedRoute>
+              <DashboardLayout>
+                <EmergencyContacts />
+              </DashboardLayout>
+            </ProtectedRoute>
           }
         />
 

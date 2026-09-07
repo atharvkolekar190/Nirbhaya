@@ -93,6 +93,26 @@ const statusStyles = (value) => {
   };
 };
 
+const formatLocation = (location) => {
+  if (!location) {
+    return "Location unavailable";
+  }
+
+  if (typeof location === "string") {
+    return location;
+  }
+
+  if (location.name) {
+    return location.name;
+  }
+
+  if (location.latitude != null && location.longitude != null) {
+    return `${location.latitude}, ${location.longitude}`;
+  }
+
+  return "Location unavailable";
+};
+
 function Dashboard() {
   const [deviceData, setDeviceData] = useState(null);
   const [sensorHistory, setSensorHistory] = useState([]);
@@ -441,7 +461,7 @@ function Dashboard() {
                     </div>
                     <div className="mt-3 grid gap-1 text-sm text-slate-600">
                       <div>{event.date} • {event.time}</div>
-                      <div>{event.location}</div>
+                      <div>{formatLocation(event.location)}</div>
                     </div>
                   </div>
                 ))
