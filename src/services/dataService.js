@@ -1,197 +1,197 @@
-import { deviceData, userData, emergencyContacts, safetyEvents, sensorHistory } from "../data/mockData";
-import { getDeviceData, getSensorHistory } from "./thingSpeakService";
 import {
-  getUser,
+  deviceData as mockDeviceData,
+  userData,
+  emergencyContacts as mockEmergencyContacts,
+  safetyEvents as mockSafetyEvents,
+  sensorHistory as mockSensorHistory,
+} from "../data/mockData";
+import {
+  getDeviceData,
+  getSensorHistory,
+} from "./thingSpeakService";
+import {
+  createEmergencyContact,
+  deleteEmergencyContact as deleteContactRequest,
   getEmergencyContacts,
   getSafetyHistory,
+  recordSafetyEvent,
+  triggerMacroDroid,
+  updateEmergencyContact as updateContactRequest,
+  getUser,
 } from "./apiService";
 
-let emergencyContactsStore = [...emergencyContacts];
+const USE_MOCK_DATA = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_DATA === "true";
+const POLLING_INTERVAL_MS = Number(import.meta.env.VITE_DEVICE_POLLING_MS || 30000);
+
+export { POLLING_INTERVAL_MS };
+
+function freshnessLabel(status) {
+  if (status === "fresh") return "Fresh";
+  if (status === "stale") return "Stale";
+  return "Unavailable";
+}
+
+function emergencyStatusLabel(value) {
+  if (value === 0) return "Safe";
+  if (value === 1) return "SOS";
+  return null;
+}
+
+function emergencyTypeLabel(value) {
+  if (value === 0) return "None";
+  if (value === 1) return "Danger";
+  if (value === 2) return "Afraid";
+  return null;
+}
+
+function mapDeviceData(data) {
+  const readings = data.readings || {};
+  const freshness = data.freshness || {};
+  const location = data.phoneLocation || {};
+
+  return {
+    deviceId: `THINGSPEAK-${data.channelId || "unknown"}`,
+    deviceName: "NIRBHAYA ThingSpeak Device",
+    connectionStatus: data.dataStatus === "unavailable" ? "Unavailable" : "Connected",
+    emergencyStatus: emergencyStatusLabel(readings.emergencyStatus),
+    emergencyType: emergencyTypeLabel(readings.emergencyType),
+    heartRate: {
+      value: readings.heartRateBpm,
+      unit: "BPM",
+      status: freshnessLabel(freshness.heartRateBpm?.status),
+      timestamp: data.timestamps?.heartRateBpm || null,
+    },
+    acceleration: {
+      value: readings.accelerationG,
+      unit: "g",
+      status: freshnessLabel(freshness.accelerationG?.status),
+      timestamp: data.timestamps?.accelerationG || null,
+    },
+    motion: { status: "Unavailable", activity: null },
+    gpsStatus: location.latitude !== null && location.longitude !== null
+      ? freshnessLabel(
+        freshness.latitude?.status === "stale" || freshness.longitude?.status === "stale"
+          ? "stale"
+          : "fresh",
+      )
+      : "Unavailable",
+    gsmStatus: "Unavailable",
+    loraStatus: "Unavailable",
+    location: {
+      latitude: location.latitude,
+      longitude: location.longitude,
+      accuracy: null,
+      latitudeTimestamp: data.timestamps?.latitude || null,
+      longitudeTimestamp: data.timestamps?.longitude || null,
+      lastUpdated: data.timestamps?.latitude || data.timestamps?.longitude || null,
+      freshness: {
+        latitude: freshness.latitude,
+        longitude: freshness.longitude,
+      },
+    },
+    timestamps: data.timestamps || {},
+    freshness,
+    dataStatus: data.dataStatus,
+    lastUpdated: data.lastUpdated,
+  };
+}
+
+function mapHistory(data) {
+  return (data.readings || []).map((entry) => ({
+    time: entry.timestamp,
+    timestamp: entry.timestamp,
+    heartRate: entry.heartRateBpm,
+    motion: entry.accelerationG,
+    accelerationG: entry.accelerationG,
+    emergencyStatus: entry.emergencyStatus,
+    emergencyType: entry.emergencyType,
+    latitude: entry.latitude,
+    longitude: entry.longitude,
+  }));
+}
 
 export async function fetchDeviceData() {
-  const liveData = await getDeviceData();
-
-  return liveData || deviceData;
+  if (USE_MOCK_DATA) return mockDeviceData;
+  return mapDeviceData(await getDeviceData());
 }
-
 
 export async function fetchSensorHistory() {
-  const liveData = await getSensorHistory();
-
-  return liveData || sensorHistory;
+  if (USE_MOCK_DATA) return mockSensorHistory;
+  return mapHistory(await getSensorHistory(100));
 }
 
-
 export async function fetchSensorReadings() {
-  const liveData = await getSensorHistory();
-  const history = liveData || sensorHistory;
+  const history = await fetchSensorHistory();
+  const heartRate = history
+    .filter((entry) => entry.heartRate !== null)
+    .map((entry) => ({ time: entry.time, timestamp: entry.timestamp, bpm: entry.heartRate }));
+  const motion = history
+    .filter((entry) => entry.accelerationG !== null)
+    .map((entry) => ({ time: entry.time, timestamp: entry.timestamp, acceleration: entry.accelerationG }));
 
-  const heartRate = history.map((entry, index) => ({
-    time: entry.time || `T-${history.length - index}`,
-    bpm: entry.heartRate ?? 80 + index,
-  }));
-
-  const motion = history.map((entry, index) => ({
-    time: entry.time || `T-${history.length - index}`,
-    motion: entry.motion ?? 20 + index * 4,
-  }));
-
-  const recentReadings = history
-    .slice(-5)
-    .reverse()
-    .map((entry) => ({
-      time: entry.time || "Just now",
-      bpm: entry.heartRate ?? 82,
-      motion: motionLevelLabel(entry.motion ?? 25),
-      gps: "Available",
-      status: "Normal",
-    }));
+  const toRecentReading = (entry) => ({
+    time: entry.time,
+    bpm: entry.heartRate,
+    motion: entry.accelerationG,
+    gps: entry.latitude !== null && entry.latitude !== undefined &&
+      entry.longitude !== null && entry.longitude !== undefined
+      ? "Available"
+      : "Unavailable",
+    status: entry.emergencyStatus === 1 ? "SOS" : entry.emergencyStatus === 0 ? "Normal" : "Unavailable",
+  });
 
   return {
     heartRate,
     motion,
-    recentReadings,
-    lastUpdated: "Just now",
+    recentReadings: history.slice(-5).reverse().map(toRecentReading),
+    lastUpdated: history.at(-1)?.timestamp || null,
+    freshness: history.at(-1)?.timestamp ? "available" : "unavailable",
     rangeMap: {
-      "1 Hour": {
-        heartRate: heartRate.slice(-6),
-        motion: motion.slice(-6),
-        recentReadings,
-      },
-      "6 Hours": {
-        heartRate: heartRate.slice(-12),
-        motion: motion.slice(-12),
-        recentReadings,
-      },
-      "24 Hours": {
-        heartRate: heartRate,
-        motion: motion,
-        recentReadings,
-      },
+      "1 Hour": { heartRate: heartRate.slice(-6), motion: motion.slice(-6), recentReadings: history.slice(-6).reverse().map(toRecentReading) },
+      "6 Hours": { heartRate: heartRate.slice(-12), motion: motion.slice(-12), recentReadings: history.slice(-12).reverse().map(toRecentReading) },
+      "24 Hours": { heartRate, motion, recentReadings: history.slice().reverse().map(toRecentReading) },
     },
   };
 }
-
-function motionLevelLabel(value) {
-  if (value >= 65) return "High";
-  if (value >= 35) return "Normal";
-  return "Low";
-}
-
 
 export async function fetchUserData() {
-  const data = await getUser();
-
-  return data || userData;
+  if (USE_MOCK_DATA) return userData;
+  return getUser();
 }
 
-
-export async function fetchEmergencyContacts() {
-  const data = await getEmergencyContacts();
-
-  return data || [...emergencyContactsStore];
+export function fetchEmergencyContacts() {
+  if (USE_MOCK_DATA) return Promise.resolve([...mockEmergencyContacts]);
+  return getEmergencyContacts();
 }
 
-
-export async function addEmergencyContact(contact) {
-  const nextContact = {
-    id: contact.id ?? Date.now(),
-    name: contact.name,
-    relationship: contact.relationship,
-    phone: contact.phone,
-    priority: Number(contact.priority) || 1,
-  };
-
-  emergencyContactsStore = [nextContact, ...emergencyContactsStore];
-
-  return nextContact;
+export function addEmergencyContact(contact) {
+  if (USE_MOCK_DATA) return Promise.resolve({ id: Date.now(), ...contact });
+  return createEmergencyContact(contact);
 }
 
-
-export async function updateEmergencyContact(id, contact) {
-  const updatedContact = {
-    id,
-    name: contact.name,
-    relationship: contact.relationship,
-    phone: contact.phone,
-    priority: Number(contact.priority) || 1,
-  };
-
-  emergencyContactsStore = emergencyContactsStore.map((current) =>
-    current.id === id ? updatedContact : current
-  );
-
-  return updatedContact;
+export function updateEmergencyContact(id, contact) {
+  if (USE_MOCK_DATA) return Promise.resolve({ id, ...contact });
+  return updateContactRequest(id, contact);
 }
 
-
-export async function deleteEmergencyContact(id) {
-  const deletedItem = emergencyContactsStore.find((contact) => contact.id === id);
-
-  emergencyContactsStore = emergencyContactsStore.filter((contact) => contact.id !== id);
-
-  return deletedItem;
+export function deleteEmergencyContact(id) {
+  if (USE_MOCK_DATA) return Promise.resolve({ id });
+  return deleteContactRequest(id);
 }
 
-
-export async function fetchSafetyHistory() {
-  const data = await getSafetyHistory();
-  const source = data && data.length ? data : safetyEvents;
-
-  return source.map((event, index) => ({
-    id: event.id ?? index + 1,
-    type: event.type || "System Check",
-    status: event.status || "Resolved",
-    timestamp: event.timestamp || toTimestamp(event.date, event.time, index),
-    description:
-      event.description ||
-      defaultDescription(event.type, event.status),
-    location: {
-      name: event.location || "Pune",
-      latitude: event.latitude ?? 18.5204,
-      longitude: event.longitude ?? 73.8567,
-    },
-  }));
+export function fetchSafetyHistory() {
+  if (USE_MOCK_DATA) return Promise.resolve(mockSafetyEvents);
+  return getSafetyHistory();
 }
 
-function toTimestamp(dateString, timeString, index) {
-  const hasDate = typeof dateString === "string" && dateString.trim();
-  const hasTime = typeof timeString === "string" && timeString.trim();
+export function saveSafetyEvent(event) {
+  if (USE_MOCK_DATA) return Promise.resolve({ id: Date.now(), ...event });
+  return recordSafetyEvent(event);
+}
 
-  if (!hasDate) {
-    const fallback = new Date();
-    fallback.setDate(fallback.getDate() - index);
-    return fallback.toISOString();
+export function triggerMacro(trigger) {
+  if (USE_MOCK_DATA) {
+    return Promise.reject(new Error("MacroDroid triggers are unavailable while mock data mode is enabled."));
   }
-
-  if (!hasTime) {
-    return new Date(dateString).toISOString();
-  }
-
-  const parsed = new Date(`${dateString} ${timeString}`);
-
-  if (Number.isNaN(parsed.getTime())) {
-    const fallback = new Date(dateString);
-    return fallback.toISOString();
-  }
-
-  return parsed.toISOString();
-}
-
-function defaultDescription(type, status) {
-  if (type === "Emergency SOS") {
-    return status === "Cancelled"
-      ? "Emergency SOS was triggered but cancelled before escalation."
-      : "Emergency SOS was raised and monitored for response.";
-  }
-
-  if (type === "Voice SOS") {
-    return "Voice SOS was initiated and resolved after confirmation.";
-  }
-
-  if (type === "Motion Alert") {
-    return "Motion activity was detected and reviewed for an unusual condition.";
-  }
-
-  return "Routine system check completed successfully and verified device health.";
+  return triggerMacroDroid(trigger);
 }

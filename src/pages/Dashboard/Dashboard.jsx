@@ -26,7 +26,9 @@ import {
   fetchDeviceData,
   fetchSafetyHistory,
   fetchSensorHistory,
+  POLLING_INTERVAL_MS,
 } from "../../services/dataService";
+import { startPolling } from "../../services/polling";
 
 const statusStyles = (value) => {
   if (!value) {
@@ -124,38 +126,34 @@ function Dashboard() {
     let mounted = true;
 
     const loadDashboardData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-
-        const [device, history, events] = await Promise.all([
-          fetchDeviceData(),
-          fetchSensorHistory(),
-          fetchSafetyHistory(),
-        ]);
-
-        if (!mounted) {
-          return;
-        }
-
+      const [device, history, events] = await Promise.all([
+        fetchDeviceData(),
+        fetchSensorHistory(),
+        fetchSafetyHistory(),
+      ]);
+      return { device, history, events };
+    };
+    const stopPolling = startPolling({
+      load: loadDashboardData,
+      intervalMs: POLLING_INTERVAL_MS,
+      onData: ({ device, history, events }) => {
+        if (!mounted) return;
         setDeviceData(device);
         setSensorHistory(history || []);
         setSafetyHistory((events || []).slice(0, 3));
-      } catch (err) {
-        if (mounted) {
-          setError("Unable to load dashboard data right now.");
-        }
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    loadDashboardData();
+        setError(null);
+        setLoading(false);
+      },
+      onError: () => {
+        if (!mounted) return;
+        setError("Unable to load dashboard data right now.");
+        setLoading(false);
+      },
+    });
 
     return () => {
       mounted = false;
+      stopPolling();
     };
   }, []);
 
@@ -195,10 +193,11 @@ function Dashboard() {
   const gsmStatus = statusStyles(deviceData.gsmStatus);
   const loraStatus = statusStyles(deviceData.loraStatus);
 
-  const lastUpdated = deviceData.location?.lastUpdated || "Just now";
-  const heartRateValue = deviceData.heartRate?.value ?? 0;
-  const heartRateStatus = deviceData.heartRate?.status ?? "Unknown";
-  const batteryLevel = deviceData.batteryLevel ?? 0;
+  const lastUpdated = deviceData.lastUpdated;
+  const heartRateValue = deviceData.heartRate?.value;
+  const heartRateStatus = deviceData.heartRate?.status || "Unavailable";
+  const accelerationValue = deviceData.acceleration?.value;
+  const accelerationStatus = deviceData.acceleration?.status || "Unavailable";
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-6">
@@ -253,7 +252,9 @@ function Dashboard() {
                   <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                     Heart Rate
                   </div>
-                  <div className="mt-1 text-2xl font-bold text-slate-900">{heartRateValue} BPM</div>
+                  <div className="mt-1 text-2xl font-bold text-slate-900">
+                    {heartRateValue ?? "Unavailable"}{heartRateValue !== null && heartRateValue !== undefined ? " BPM" : ""}
+                  </div>
                 </div>
               </div>
             </div>
@@ -273,21 +274,23 @@ function Dashboard() {
                 </div>
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Battery
+                    Acceleration
                   </div>
-                  <div className="mt-1 text-2xl font-bold text-slate-900">{batteryLevel}%</div>
+                  <div className="mt-1 text-2xl font-bold text-slate-900">
+                    {accelerationValue ?? "Unavailable"}{accelerationValue !== null && accelerationValue !== undefined ? " g" : ""}
+                  </div>
                 </div>
               </div>
             </div>
             <div className="mt-6">
               <div className="mb-2 flex items-center justify-between text-xs font-medium text-slate-500">
-                <span>Charge</span>
-                <span>{batteryLevel}%</span>
+                <span>Field 1 status</span>
+                <span>{accelerationStatus}</span>
               </div>
               <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
                 <div
                   className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-indigo-500"
-                  style={{ width: `${batteryLevel}%` }}
+                  style={{ width: accelerationValue == null ? "0%" : "100%" }}
                 />
               </div>
             </div>
@@ -309,7 +312,9 @@ function Dashboard() {
               <span className={`inline-flex h-2.5 w-2.5 rounded-full ${gpsStatus.dot}`} />
             </div>
             <div className="mt-6 border-t border-slate-100 pt-4 text-sm text-slate-600">
-              Location tracking is active.
+              {deviceData.location?.lastUpdated
+                ? `Last phone location update: ${new Date(deviceData.location.lastUpdated).toLocaleString()}`
+                : "Phone location unavailable."}
             </div>
           </div>
         </section>
@@ -365,13 +370,15 @@ function Dashboard() {
             </div>
 
             <h2 className={`mt-5 text-3xl font-bold ${safetyStatus.text}`}>
-              {deviceData.emergencyStatus}
+              {deviceData.emergencyStatus || "Unavailable"}
             </h2>
 
             <p className="mt-3 text-sm leading-6 text-slate-600">
               {deviceData.emergencyStatus === "Safe"
                 ? "System is operating normally"
-                : "Emergency state detected and attention is required."}
+                : deviceData.emergencyStatus === "SOS"
+                  ? "Hardware SOS state reported by ThingSpeak."
+                  : "No valid emergency status is currently available."}
             </p>
 
             <div className="mt-6 rounded-xl border border-slate-200 bg-white/80 p-4">
@@ -379,7 +386,10 @@ function Dashboard() {
                 Emergency status
               </div>
               <div className="mt-2 text-lg font-semibold text-slate-900">
-                {deviceData.emergencyStatus}
+                {deviceData.emergencyStatus || "Unavailable"}
+              </div>
+              <div className="mt-3 text-sm text-slate-600">
+                Emergency type: {deviceData.emergencyType || "Unavailable"}
               </div>
             </div>
           </div>

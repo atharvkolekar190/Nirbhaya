@@ -13,7 +13,13 @@ import {
   Wifi,
 } from "lucide-react";
 
-import { fetchDeviceData, fetchEmergencyContacts } from "../../services/dataService";
+import {
+  fetchDeviceData,
+  fetchEmergencyContacts,
+  POLLING_INTERVAL_MS,
+  triggerMacro,
+} from "../../services/dataService";
+import { startPolling } from "../../services/polling";
 
 const statusStyles = (value) => {
   const normalized = (value || "").toString().toLowerCase();
@@ -67,43 +73,38 @@ function EmergencyCenter() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showAfraidConfirm, setShowAfraidConfirm] = useState(false);
+  const [triggerPending, setTriggerPending] = useState(null);
+  const [triggerMessage, setTriggerMessage] = useState(null);
   const [sosTriggered, setSosTriggered] = useState(false);
   const [countdown, setCountdown] = useState(10);
 
   useEffect(() => {
     let mounted = true;
 
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-
-        const [device, emergencyContacts] = await Promise.all([
-          fetchDeviceData(),
-          fetchEmergencyContacts(),
-        ]);
-
-        if (!mounted) {
-          return;
-        }
-
+    const stopPolling = startPolling({
+      load: async () => ({
+        device: await fetchDeviceData(),
+        emergencyContacts: await fetchEmergencyContacts(),
+      }),
+      intervalMs: POLLING_INTERVAL_MS,
+      onData: ({ device, emergencyContacts }) => {
+        if (!mounted) return;
         setDeviceData(device);
         setContacts(emergencyContacts || []);
-      } catch (err) {
-        if (mounted) {
-          setError("Unable to load emergency center data right now.");
-        }
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    loadData();
+        setError(null);
+        setLoading(false);
+      },
+      onError: () => {
+        if (!mounted) return;
+        setError("Unable to load emergency center data right now.");
+        setLoading(false);
+      },
+    });
 
     return () => {
       mounted = false;
+      stopPolling();
     };
   }, []);
 
@@ -126,10 +127,40 @@ function EmergencyCenter() {
   const statusInfo = useMemo(() => statusStyles(deviceData?.emergencyStatus), [deviceData]);
   const visibleContacts = contacts.slice(0, 3);
 
-  const handleConfirmSos = () => {
-    setSosTriggered(true);
-    setCountdown(10);
+  const handleConfirmSos = async () => {
     setShowConfirm(false);
+    setTriggerPending("danger");
+    setTriggerMessage(null);
+    try {
+      const result = await triggerMacro("danger");
+      setSosTriggered(true);
+      setCountdown(10);
+      setTriggerMessage({
+        type: "success",
+        text: `Danger MacroDroid trigger accepted. Notification delivery is ${result.notificationDelivery}.`,
+      });
+    } catch (triggerError) {
+      setTriggerMessage({ type: "error", text: triggerError.message });
+    } finally {
+      setTriggerPending(null);
+    }
+  };
+
+  const handleConfirmAfraid = async () => {
+    setShowAfraidConfirm(false);
+    setTriggerPending("afraid");
+    setTriggerMessage(null);
+    try {
+      const result = await triggerMacro("afraid");
+      setTriggerMessage({
+        type: "success",
+        text: `Afraid MacroDroid trigger accepted. Notification delivery is ${result.notificationDelivery}.`,
+      });
+    } catch (triggerError) {
+      setTriggerMessage({ type: "error", text: triggerError.message });
+    } finally {
+      setTriggerPending(null);
+    }
   };
 
   const handleCancelAlert = () => {
@@ -184,14 +215,21 @@ function EmergencyCenter() {
                   Current Safety Status
                 </div>
                 <div className={`mt-1 text-2xl font-bold ${statusInfo.text}`}>
-                  {deviceData.emergencyStatus}
+                  {deviceData.emergencyStatus || "Unavailable"}
+                </div>
+                <div className="mt-1 text-sm text-slate-600">
+                  Emergency type: {deviceData.emergencyType || "Unavailable"}
                 </div>
               </div>
             </div>
 
             <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
               <span className={`inline-flex h-2.5 w-2.5 rounded-full ${statusInfo.dot}`} />
-              {deviceData.emergencyStatus === "Safe" ? "No active emergency" : "Emergency response active"}
+              {deviceData.emergencyStatus === "Safe"
+                ? "No active emergency"
+                : deviceData.emergencyStatus === "SOS"
+                  ? "Hardware SOS state reported; no notification is sent by this phase."
+                  : "Emergency status unavailable"}
             </div>
           </div>
         </section>
@@ -215,10 +253,30 @@ function EmergencyCenter() {
             <button
               type="button"
               onClick={() => setShowConfirm(true)}
+              disabled={Boolean(triggerPending)}
               className="mt-5 inline-flex w-full items-center justify-center rounded-xl bg-red-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-red-500"
             >
-              Send SOS
+              {triggerPending === "danger" ? "Sending SOS..." : "SOS / Emergency"}
             </button>
+
+            <button
+              type="button"
+              onClick={() => setShowAfraidConfirm(true)}
+              disabled={Boolean(triggerPending)}
+              className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-amber-300 bg-amber-50 px-5 py-3 text-sm font-semibold text-amber-800 transition hover:bg-amber-100"
+            >
+              {triggerPending === "afraid" ? "Sending..." : "I Am Afraid"}
+            </button>
+
+            {triggerMessage && (
+              <div className={`mt-4 rounded-xl border p-3 text-sm ${
+                triggerMessage.type === "success"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  : "border-red-200 bg-red-50 text-red-700"
+              }`}>
+                {triggerMessage.text}
+              </div>
+            )}
 
             {sosTriggered && (
               <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4">
@@ -231,7 +289,7 @@ function EmergencyCenter() {
                 </div>
 
                 <div className="mt-3 text-sm text-red-700">
-                  This is a frontend demo only. No real emergency communication is being sent.
+                  The MacroDroid webhook was accepted, but this does not confirm SMS, calls, or physical-band activation.
                 </div>
 
                 <button
@@ -286,7 +344,7 @@ function EmergencyCenter() {
                   <span className="font-medium text-slate-700">GPS</span>
                 </div>
                 <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                  {deviceData.gpsStatus}
+                  {deviceData.gpsStatus || "Unavailable"}
                 </span>
               </div>
 
@@ -296,7 +354,7 @@ function EmergencyCenter() {
                   <span className="font-medium text-slate-700">GSM</span>
                 </div>
                 <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                  {deviceData.gsmStatus}
+                  {deviceData.gsmStatus || "Unavailable"}
                 </span>
               </div>
 
@@ -306,7 +364,7 @@ function EmergencyCenter() {
                   <span className="font-medium text-slate-700">LoRa</span>
                 </div>
                 <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
-                  {deviceData.loraStatus}
+                  {deviceData.loraStatus || "Unavailable"}
                 </span>
               </div>
             </div>
@@ -399,6 +457,24 @@ function EmergencyCenter() {
                 className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-500"
               >
                 Confirm SOS
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showAfraidConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h2 className="text-xl font-semibold text-slate-900">Confirm “I Am Afraid”</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              This invokes the configured MacroDroid afraid macro. Continue only if you want to send that trigger.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" onClick={() => setShowAfraidConfirm(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">
+                Cancel
+              </button>
+              <button type="button" onClick={handleConfirmAfraid} className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white">
+                Confirm trigger
               </button>
             </div>
           </div>

@@ -1,12 +1,22 @@
-export async function getDeviceData() {
-  // ThingSpeak integration will be added later.
-  // For now, return null so the application uses mock data.
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5000").replace(/\/$/, "");
 
-  return null;
+async function get(path) {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: { Accept: "application/json" },
+  });
+  const payload = await response.json();
+
+  if (!response.ok || payload.success === false) {
+    throw new Error(payload.error?.message || `Device request failed (${response.status}).`);
+  }
+
+  return payload.data;
 }
 
-export async function getSensorHistory() {
-  // ThingSpeak historical data will be connected later.
+export function getDeviceData() {
+  return get("/api/device/latest");
+}
 
-  return null;
+export function getSensorHistory(limit = 100) {
+  return get(`/api/device/history?limit=${encodeURIComponent(limit)}`);
 }

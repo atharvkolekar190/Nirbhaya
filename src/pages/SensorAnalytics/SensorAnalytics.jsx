@@ -6,7 +6,6 @@ import {
   Gauge,
   HeartPulse,
   MapPin,
-  RadioTower,
   ShieldCheck,
   Wifi,
 } from "lucide-react";
@@ -22,7 +21,8 @@ import {
   YAxis,
 } from "recharts";
 
-import { fetchDeviceData, fetchSensorReadings } from "../../services/dataService";
+import { fetchDeviceData, fetchSensorReadings, POLLING_INTERVAL_MS } from "../../services/dataService";
+import { startPolling } from "../../services/polling";
 
 const TIME_RANGES = ["1 Hour", "6 Hours", "24 Hours"];
 
@@ -40,12 +40,6 @@ const statusTone = (status) => {
   return "border-red-200 bg-red-50 text-red-700";
 };
 
-const motionLevelLabel = (value) => {
-  if (value >= 65) return "High";
-  if (value >= 35) return "Normal";
-  return "Low";
-};
-
 function SensorAnalytics() {
   const [deviceData, setDeviceData] = useState(null);
   const [sensorData, setSensorData] = useState({
@@ -61,42 +55,29 @@ function SensorAnalytics() {
   useEffect(() => {
     let active = true;
 
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-
-        const [device, readings] = await Promise.all([
-          fetchDeviceData(),
-          fetchSensorReadings(),
-        ]);
-
-        if (!active) {
-          return;
-        }
-
+    const stopPolling = startPolling({
+      load: async () => ({
+        device: await fetchDeviceData(),
+        readings: await fetchSensorReadings(),
+      }),
+      intervalMs: POLLING_INTERVAL_MS,
+      onData: ({ device, readings }) => {
+        if (!active) return;
         setDeviceData(device);
-        setSensorData(readings || {
-          heartRate: [],
-          motion: [],
-          recentReadings: [],
-          lastUpdated: "Just now",
-        });
-      } catch (err) {
-        if (active) {
-          setError("Unable to load sensor analytics right now.");
-        }
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
-    };
-
-    loadData();
+        setSensorData(readings);
+        setError(null);
+        setLoading(false);
+      },
+      onError: () => {
+        if (!active) return;
+        setError("Unable to load sensor analytics right now.");
+        setLoading(false);
+      },
+    });
 
     return () => {
       active = false;
+      stopPolling();
     };
   }, []);
 
@@ -114,35 +95,35 @@ function SensorAnalytics() {
       return [];
     }
 
-    const heartRateValue = deviceData.heartRate?.value ?? 0;
-    const heartRateStatus = deviceData.heartRate?.status ?? "Normal";
+    const heartRateValue = deviceData.heartRate?.value;
+    const heartRateStatus = deviceData.heartRate?.status || "Unavailable";
 
     return [
       {
         title: "Heart Rate",
-        value: `${heartRateValue} BPM`,
+        value: heartRateValue == null ? "Unavailable" : `${heartRateValue} BPM`,
         status: heartRateStatus,
         icon: HeartPulse,
         iconClass: "bg-red-50 text-red-600",
       },
       {
-        title: "Motion",
-        value: deviceData.motion?.status ?? "Normal",
-        status: deviceData.motion?.status ?? "Normal",
+        title: "Acceleration",
+        value: deviceData.acceleration?.value == null ? "Unavailable" : `${deviceData.acceleration.value} g`,
+        status: deviceData.acceleration?.status || "Unavailable",
         icon: Activity,
         iconClass: "bg-indigo-50 text-indigo-600",
       },
       {
         title: "GPS",
-        value: deviceData.gpsStatus ?? "Available",
-        status: deviceData.gpsStatus ?? "Available",
+        value: deviceData.gpsStatus || "Unavailable",
+        status: deviceData.gpsStatus || "Unavailable",
         icon: MapPin,
         iconClass: "bg-sky-50 text-sky-600",
       },
       {
         title: "Device/Band",
-        value: deviceData.connectionStatus ?? "Connected",
-        status: deviceData.connectionStatus ?? "Connected",
+        value: deviceData.connectionStatus || "Unavailable",
+        status: deviceData.connectionStatus || "Unavailable",
         icon: ShieldCheck,
         iconClass: "bg-emerald-50 text-emerald-600",
       },
@@ -193,7 +174,7 @@ function SensorAnalytics() {
 
           <div className="inline-flex items-center gap-2 self-start rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm md:self-auto">
             <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
-            Live Monitoring
+            {sensorData.freshness === "unavailable" ? "Data unavailable" : "ThingSpeak data"}
           </div>
         </header>
 
@@ -280,8 +261,8 @@ function SensorAnalytics() {
                 <Activity className="h-5 w-5" />
               </div>
               <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Motion / Activity</div>
-                <h2 className="mt-1 text-xl font-semibold text-slate-900">Recent motion readings</h2>
+                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Acceleration</div>
+                <h2 className="mt-1 text-xl font-semibold text-slate-900">Acceleration magnitude</h2>
               </div>
             </div>
 
@@ -292,14 +273,14 @@ function SensorAnalytics() {
                   <XAxis dataKey="time" tickLine={false} axisLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
                   <YAxis tickLine={false} axisLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
                   <Tooltip
-                    formatter={(value) => [`${motionLevelLabel(value)} activity`, "Motion"]}
+                    formatter={(value) => [`${value} g`, "Acceleration"]}
                     contentStyle={{
                       borderRadius: 12,
                       border: "1px solid #e2e8f0",
                       backgroundColor: "#fff",
                     }}
                   />
-                  <Bar dataKey="motion" fill="#93c5fd" radius={[8, 8, 0, 0]} />
+                  <Bar dataKey="acceleration" fill="#93c5fd" radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -318,11 +299,10 @@ function SensorAnalytics() {
 
             <div className="space-y-3 text-sm">
               {[
-                { label: "MPU6050", value: "Connected", icon: Activity },
-                { label: "MAX30102", value: "Connected", icon: HeartPulse },
-                { label: "GPS", value: deviceData.gpsStatus || "Available", icon: MapPin },
-                { label: "GSM", value: deviceData.gsmStatus || "Connected", icon: Wifi },
-                { label: "LoRa", value: deviceData.loraStatus || "Standby", icon: RadioTower },
+                { label: "Acceleration (Field 1)", value: deviceData.acceleration?.status || "Unavailable", icon: Activity },
+                { label: "Heart rate (Field 2)", value: deviceData.heartRate?.status || "Unavailable", icon: HeartPulse },
+                { label: "GPS (Fields 5-6)", value: deviceData.gpsStatus || "Unavailable", icon: MapPin },
+                { label: "ThingSpeak", value: deviceData.connectionStatus || "Unavailable", icon: Wifi },
               ].map((sensor) => {
                 const Icon = sensor.icon;
                 const tone = statusTone(sensor.value);
@@ -352,7 +332,7 @@ function SensorAnalytics() {
 
             <div className="flex items-center gap-2 text-sm text-slate-500">
               <Clock3 className="h-4 w-4" />
-              Last updated: {lastUpdated}
+              Last updated: {lastUpdated ? new Date(lastUpdated).toLocaleString() : "Unavailable"}
             </div>
           </div>
 
