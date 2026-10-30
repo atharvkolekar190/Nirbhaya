@@ -48,7 +48,7 @@ function EmergencyContactsPage() {
         }
 
         setContacts(data || []);
-      } catch (err) {
+      } catch {
         if (mounted) {
           setError("Unable to load emergency contacts right now.");
         }
@@ -124,7 +124,7 @@ function EmergencyContactsPage() {
       }
 
       closeFormModal();
-    } catch (err) {
+    } catch {
       setFormError("Unable to save this contact right now.");
     }
   };
@@ -138,7 +138,7 @@ function EmergencyContactsPage() {
       await deleteEmergencyContact(deleteContactId);
       setContacts((current) => current.filter((contact) => contact.id !== deleteContactId));
       setDeleteContactId(null);
-    } catch (err) {
+    } catch {
       setError("Unable to delete this contact right now.");
     }
   };

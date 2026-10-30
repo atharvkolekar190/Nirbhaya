@@ -1,12 +1,16 @@
 import {
+  BarChart3,
+  ChevronLeft,
+  ChevronRight,
+  History,
   LayoutDashboard,
   MapPin,
+  ShieldCheck,
   Siren,
-  BarChart3,
-  History,
   Users,
-  Settings,
+  X,
 } from "lucide-react";
+import { NavLink } from "react-router-dom";
 
 const menuItems = [
   {
@@ -25,9 +29,9 @@ const menuItems = [
     path: "/emergency",
   },
   {
-    label: "Sensor Analytics",
-    icon: BarChart3,
-    path: "/analytics",
+    label: "Emergency Contacts",
+    icon: Users,
+    path: "/emergency-contacts",
   },
   {
     label: "Safety History",
@@ -35,62 +39,95 @@ const menuItems = [
     path: "/history",
   },
   {
-    label: "Emergency Contacts",
-    icon: Users,
-    path: "/emergency-contacts",
+    label: "Sensor Analytics",
+    icon: BarChart3,
+    path: "/analytics",
   },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ collapsed = false, mobile = false, onToggleCollapse, onNavigate, onClose }) {
+  const showText = !collapsed || mobile;
+  const sidebarNavId = mobile ? "nirbhaya-mobile-sidebar-nav" : "nirbhaya-desktop-sidebar-nav";
+
   return (
-    <aside className="flex h-screen w-64 flex-col border-r border-slate-200 bg-white">
-      
-      {/* Logo */}
-      <div className="flex h-20 items-center px-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            NIRBHAYA
-          </h1>
-          <p className="text-xs text-slate-500">
-            Smart Safety System
-          </p>
+    <aside
+      className={[
+        "flex h-screen flex-col border-slate-200 bg-white shadow-sm",
+        mobile ? "w-[260px] max-w-[85vw]" : "w-[260px] transition-[width] duration-300 ease-out",
+        !mobile && collapsed ? "w-[78px]" : "",
+        mobile ? "border-r" : "border-r",
+      ].join(" ")}
+    >
+      <div className={`flex items-center ${showText ? "justify-between px-4" : "justify-center px-2"} h-20 border-b border-slate-200`}>
+        <div className={`flex items-center gap-3 ${showText ? "" : "justify-center"}`}>
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm">
+            <ShieldCheck className="h-5 w-5" />
+          </div>
+
+          {showText && (
+            <div>
+              <h1 className="text-lg font-bold tracking-tight text-slate-900">NIRBHAYA</h1>
+              <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-slate-500">
+                Safety System
+              </p>
+            </div>
+          )}
         </div>
+
+        {mobile ? (
+          <button
+            type="button"
+            aria-label="Close navigation menu"
+            onClick={onClose}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!collapsed}
+            aria-controls={sidebarNavId}
+            onClick={onToggleCollapse}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+          >
+            {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </button>
+        )}
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 px-4 py-4">
-        <p className="mb-3 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
-          Main Menu
-        </p>
-
-        <div className="space-y-1">
+      <nav id={sidebarNavId} className="flex-1 overflow-y-auto px-3 py-4">
+        <div className="space-y-1.5">
           {menuItems.map((item) => {
             const Icon = item.icon;
 
             return (
-              <a
+              <NavLink
                 key={item.path}
-                href={item.path}
-                className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+                to={item.path}
+                end={item.path === "/dashboard"}
+                onClick={onNavigate}
+                title={!mobile && collapsed ? item.label : undefined}
+                aria-label={item.label}
+                className={({ isActive }) => [
+                  "group relative flex items-center rounded-xl text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 motion-reduce:transition-none",
+                  showText ? "gap-3 px-3 py-2.5" : "justify-center px-2 py-2.5",
+                  isActive
+                    ? "border border-indigo-100 bg-indigo-50 text-indigo-700 shadow-sm before:absolute before:left-0 before:top-2 before:h-7 before:w-1 before:rounded-full before:bg-indigo-500"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+                ].join(" ")}
               >
-                <Icon size={19} strokeWidth={1.8} />
-                {item.label}
-              </a>
+                <span className="flex h-5 w-5 items-center justify-center text-current">
+                  <Icon className="h-5 w-5" strokeWidth={1.8} />
+                </span>
+
+                {showText && <span className="truncate">{item.label}</span>}
+              </NavLink>
             );
           })}
         </div>
       </nav>
-
-      {/* Settings */}
-      <div className="border-t border-slate-200 p-4">
-        <a
-          href="#"
-          className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-        >
-          <Settings size={19} strokeWidth={1.8} />
-          Settings
-        </a>
-      </div>
     </aside>
   );
 }

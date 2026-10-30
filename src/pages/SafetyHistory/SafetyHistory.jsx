@@ -149,7 +149,7 @@ function SafetyHistory() {
         }
 
         setEvents(data || []);
-      } catch (loadError) {
+      } catch {
         if (active) {
           setError("Unable to load safety history right now.");
         }
@@ -167,9 +167,7 @@ function SafetyHistory() {
     };
   }, []);
 
-  useEffect(() => {
-    setVisibleCount(5);
-  }, [search, eventType, statusFilter, dateFilter]);
+  const resetVisibleCount = () => setVisibleCount(5);
 
   const filteredEvents = useMemo(() => {
     return events.filter((event) => {
@@ -288,7 +286,10 @@ function SafetyHistory() {
               <input
                 type="text"
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  resetVisibleCount();
+                }}
                 placeholder="Search by event, status, date, or location"
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:bg-white"
               />
@@ -296,7 +297,10 @@ function SafetyHistory() {
 
             <select
               value={eventType}
-              onChange={(event) => setEventType(event.target.value)}
+              onChange={(event) => {
+                setEventType(event.target.value);
+                resetVisibleCount();
+              }}
               className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:bg-white"
             >
               {EVENT_TYPE_OPTIONS.map((option) => (
@@ -308,7 +312,10 @@ function SafetyHistory() {
 
             <select
               value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
+              onChange={(event) => {
+                setStatusFilter(event.target.value);
+                resetVisibleCount();
+              }}
               className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:bg-white"
             >
               {STATUS_OPTIONS.map((option) => (
@@ -320,7 +327,10 @@ function SafetyHistory() {
 
             <select
               value={dateFilter}
-              onChange={(event) => setDateFilter(event.target.value)}
+              onChange={(event) => {
+                setDateFilter(event.target.value);
+                resetVisibleCount();
+              }}
               className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:bg-white"
             >
               {DATE_OPTIONS.map((option) => (
